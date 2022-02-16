@@ -2,9 +2,12 @@ import numpy as np
 from skimage import io
 from skimage.color import rgb2hsv, hsv2rgb
 import matplotlib.pyplot as plt
+from typing import List, Union
 
 
-def compute_clip_limit(block: np.ndarray, alpha: float = 40, pi: float = 1.5, R: int = 255) -> int:
+def compute_clip_limit(
+    block: np.ndarray, alpha: float = 40, pi: float = 1.5, R: int = 255
+) -> int:
     """This function computes the beta clip limits of each image block
 
     Args:
@@ -21,7 +24,9 @@ def compute_clip_limit(block: np.ndarray, alpha: float = 40, pi: float = 1.5, R:
     n = l_max - block.min()
     sigma = block.std()
     m = block.size
-    return int((m / n) * (1 + (pi * l_max / R) + (alpha * sigma / 100.) / (avg + 0.001)))
+    return int(
+        (m / n) * (1 + (pi * l_max / R) + (alpha * sigma / 100.0) / (avg + 0.001))
+    )
 
 
 def clip_and_redistribute_hist(hist: np.ndarray, beta: int) -> np.ndarray:
@@ -55,7 +60,7 @@ def compute_gamma(l_max: int, d_range: int, weighted_cdf: np.ndarray) -> np.ndar
     Returns:
         (np.ndarray): The gamma vector of size nbins
     """
-    return l_max * np.power(np.arange(d_range + 1) / l_max, (1 + weighted_cdf) / 2.)
+    return l_max * np.power(np.arange(d_range + 1) / l_max, (1 + weighted_cdf) / 2.0)
 
 
 def compute_w_en(l_alpha: int, l_max: int, cdf: np.ndarray) -> np.ndarray:
@@ -73,7 +78,9 @@ def compute_w_en(l_alpha: int, l_max: int, cdf: np.ndarray) -> np.ndarray:
     return np.power(l_max / l_alpha, 1 - (np.log(np.e + cdf) / 8))
 
 
-def compute_block_coords(center_block: int, block_index: int, index: int, n_blocks: int) -> tuple:
+def compute_block_coords(
+    center_block: int, block_index: int, index: int, n_blocks: int
+) -> tuple:
     """This function computes the neighbour block coordinates to interpolate from the histogram. This computes the coords
     of the interpolating blocks from both axis (x, y)
 
@@ -117,7 +124,14 @@ def compute_mn_factors(coords: tuple, index: int) -> float:
         return (coords[1] - index) / (coords[1] - coords[0])
 
 
-def dual_gamma_clahe(image: np.ndarray, block_size=(32, 32), alpha=20, pi=1.5, delta=50, bins=256):
+def dual_gamma_clahe(
+    image: np.ndarray,
+    block_size: Union[int, List] = [32, 32],
+    alpha: float = 20,
+    pi: float = 1.5,
+    delta: float = 50,
+    bins: int = 256,
+):
     """The dual gamma clahe algorithm taking as inputs the image in numpy format along with the parameters. The algorithm transforms
     the image in HSV if its RGB and applies the equalization on the V channel. If grayscale image applied, then its using it as is.
 
@@ -126,7 +140,7 @@ def dual_gamma_clahe(image: np.ndarray, block_size=(32, 32), alpha=20, pi=1.5, d
         block_size (int, int): The size of the selected block window
         alpha (float): The alpha variance enhance parameter
         pi (float): The P factor enhanement
-        delta (int): The threshold value to aply T1 or Gamma depending on the threshold
+        delta (float): The threshold value to aply T1 or Gamma depending on the threshold
         bins (int): The number of bins
 
     Returns:
@@ -134,23 +148,29 @@ def dual_gamma_clahe(image: np.ndarray, block_size=(32, 32), alpha=20, pi=1.5, d
     """
     ndim = image.ndim
     R = bins - 1
-    if R!= 255:
-        raise ValueError(f"The range should be 256. This algorithm hasn't been tested on a different value, but given {bins}")
+    if R != 255:
+        raise ValueError(
+            f"The range should be 256. This algorithm hasn't been tested on a different value, but given {bins}"
+        )
     if ndim == 3 and image.shape[2] == 3:
         hsv_image = rgb2hsv(image)
         gray_image = hsv_image[:, :, 2]
         gray_image = np.clip(gray_image * 255, 0, 255)
     elif ndim == 2:
-        gray_image = image.copy()
+        gray_image = image.copy().astype(np.float)
     else:
-        raise ValueError(f"Wrong number of shape or dimensions. Either single or 3 channel but image has shape {image.shape}")
+        raise ValueError(
+            f"Wrong number of shape or dimensions. Either single or 3 channel but image has shape {image.shape}"
+        )
 
     if isinstance(block_size, int):
         width_block = block_size
         height_block = block_size
         block_size = (block_size, block_size)
-    elif isinstance(block_size, tuple):
-        assert len(block_size) == 2, f"block_size dimension is not int or (tuple, tuple) but {len(block_size)}"
+    elif isinstance(block_size, List):
+        assert (
+            len(block_size) == 2
+        ), f"block_size dimension is not int or (tuple, tuple) but {len(block_size)}"
         height_block, width_block = block_size
 
     # Compute global histogram and global values
@@ -161,14 +181,25 @@ def dual_gamma_clahe(image: np.ndarray, block_size=(32, 32), alpha=20, pi=1.5, d
     glob_l_a = np.argwhere(glob_cdf > 0.75)[0]
 
     # Compute the padding values to pad the image
-    pad_start_per_dim = [height_block // 2, width_block // 2]
-    pad_end_per_dim = [(k - s % k) % k + int(np.ceil(k / 2.))
-                       for k, s in zip(block_size, gray_image.shape)]
+    pad_start = [height_block // 2, width_block // 2]
+    pad_end = [
+        (k - im % k) % k + int(np.ceil(k / 2.))
+        for k, im in zip(block_size, gray_image.shape)
+    ]
+
+    unpad_indices = tuple(
+        [
+            slice(pad_h, im - pad_w)
+            for pad_h, pad_w, im in zip(pad_start, pad_end, gray_image.shape)
+        ]
+    )
 
     # Pad the image with reflect mode for color invariance
-    gray_image = np.pad(gray_image, [[p_i, p_f] for p_i, p_f in
-                                     zip(pad_start_per_dim, pad_end_per_dim)],
-                        mode='reflect')
+    gray_image = np.pad(
+        gray_image,
+        [[pad_h, pad_w] for pad_h, pad_w in zip(pad_start, pad_end)],
+        mode="reflect",
+    )
 
     pad_height, pad_width = gray_image.shape[:2]
     n_height_blocks = int(pad_height / block_size[0])
@@ -180,13 +211,26 @@ def dual_gamma_clahe(image: np.ndarray, block_size=(32, 32), alpha=20, pi=1.5, d
         for jj in range(n_width_blocks):
 
             # Compute the block range and max block value
-            max_val_block = gray_image[ii:ii + block_size[0], jj:jj + block_size[1]].max()
-            r_block = max_val_block - gray_image[ii:ii + block_size[0], jj:jj + block_size[1]].min()
+            max_val_block = gray_image[
+                ii : ii + block_size[0], jj : jj + block_size[1]
+            ].max()
+            r_block = (
+                max_val_block
+                - gray_image[ii : ii + block_size[0], jj : jj + block_size[1]].min()
+            )
 
-            hists[ii, jj] = np.histogram(gray_image[ii:ii + block_size[0], jj:jj + block_size[1]], bins=bins)[0]
-            beta_thresholds[ii, jj] = compute_clip_limit(gray_image[ii:ii + block_size[0], jj:jj + block_size[1]],
-                                                         alpha=alpha, pi=pi, R=R)
-            hists[ii, jj] = clip_and_redistribute_hist(hists[ii, jj], beta_thresholds[ii, jj])
+            hists[ii, jj] = np.histogram(
+                gray_image[ii : ii + block_size[0], jj : jj + block_size[1]], bins=bins
+            )[0]
+            beta_thresholds[ii, jj] = compute_clip_limit(
+                gray_image[ii : ii + block_size[0], jj : jj + block_size[1]],
+                alpha=alpha,
+                pi=pi,
+                R=R,
+            )
+            hists[ii, jj] = clip_and_redistribute_hist(
+                hists[ii, jj], beta_thresholds[ii, jj]
+            )
 
             pdf_min = hists[ii, jj].min()
             pdf_max = hists[ii, jj].max()
@@ -202,8 +246,10 @@ def dual_gamma_clahe(image: np.ndarray, block_size=(32, 32), alpha=20, pi=1.5, d
 
             # Compute Wen T1 and Gamma
             w_en = compute_w_en(l_max=glob_l_max, l_alpha=glob_l_a, cdf=norm_cdf)
-            tau_1 = (max_val_block * w_en * norm_cdf)
-            gamma = compute_gamma(l_max=glob_l_max, d_range=R, weighted_cdf=weighted_cum_hist)
+            tau_1 = max_val_block * w_en * norm_cdf
+            gamma = compute_gamma(
+                l_max=glob_l_max, d_range=R, weighted_cdf=weighted_cum_hist
+            )
 
             if r_block > delta:
                 hists[ii, jj] = np.maximum(tau_1, gamma)
@@ -224,8 +270,12 @@ def dual_gamma_clahe(image: np.ndarray, block_size=(32, 32), alpha=20, pi=1.5, d
             center_block_y = block_y * block_size[1] + n_width_blocks // 2
 
             # Compute the block coordinates to interpolate from
-            block_y_a, block_y_c = compute_block_coords(center_block_x, block_x, i, n_height_blocks)
-            block_x_a, block_x_b = compute_block_coords(center_block_y, block_y, j, n_width_blocks)
+            block_y_a, block_y_c = compute_block_coords(
+                center_block_x, block_x, i, n_height_blocks
+            )
+            block_x_a, block_x_b = compute_block_coords(
+                center_block_y, block_y, j, n_width_blocks
+            )
 
             # Block image coordinates
             y_a = block_y_c * block_size[0] + block_size[0] // 2
@@ -241,37 +291,38 @@ def dual_gamma_clahe(image: np.ndarray, block_size=(32, 32), alpha=20, pi=1.5, d
             Tc = hists[block_y_a, block_x_a, p_i]
             Td = hists[block_y_a, block_x_b, p_i]
 
-            result[i, j] = int(m * (n * Ta + (1 - n) * Tb) + (1 - m) * (n * Tc + (1 - n) * Td))
+            result[i, j] = int(
+                m * (n * Ta + (1 - n) * Tb) + (1 - m) * (n * Tc + (1 - n) * Td)
+            )
 
-    # Get the original shape of the image
-    unpad_slices = tuple([slice(p_i, s - p_f) for p_i, p_f, s in
-                          zip(pad_start_per_dim, pad_end_per_dim,
-                              gray_image.shape)])
-    result = result[unpad_slices]
+
+    result = result[unpad_indices]
     result = np.clip(result, 0, R)
     if ndim == 3:
-        result = result / 255.
+        result = result / 255.0
         hsv_image[:, :, 2] = result
         return (255 * hsv2rgb(hsv_image)).astype(np.uint8)
     else:
         return result.astype(np.uint8)
 
 
-if __name__ == '__main__':
-    path = './images/streets.jpg'
+if __name__ == "__main__":
+    path = "./images/streets.jpg"
     image = io.imread(path)
-    equalized_image = dual_gamma_clahe(image.copy(), block_size=32, alpha=100., delta=50., pi=1.5, bins=256)
+    equalized_image = dual_gamma_clahe(
+        image.copy(), block_size=32, alpha=100.0, delta=50.0, pi=1.5, bins=256
+    )
     # equalized_image = dual_gamma_clahe(image.copy(), block_size=32, alpha=10., delta=70., pi=1.5, bins=256)
     # equalized_image = dual_gamma_clahe(image.copy(), block_size=64, alpha=80., delta=40., pi=3.5, bins=256)
     fig, ax = plt.subplots(1, 2)
     if image.ndim == 2:
-        cmap = 'gray'
+        cmap = "gray"
     else:
         cmap = None
     ax[0].imshow(image, cmap=cmap)
     ax[1].imshow(equalized_image, cmap=cmap)
-    ax[0].set_title('Input Image')
-    ax[1].set_title('Equalized Image ')
-    ax[0].axis('off')
-    ax[1].axis('off')
+    ax[0].set_title("Input Image")
+    ax[1].set_title("Equalized Image ")
+    ax[0].axis("off")
+    ax[1].axis("off")
     plt.show()
