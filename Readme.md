@@ -1,7 +1,7 @@
 ## Automatic Contrast-Limited Adaptive Histogram Equalization With Dual Gamma Correction
 
-This is an attempt to implement in python the algorithm of the paper `Automatic Contrast-Limited Adaptive Histogram
-Equalization With Dual Gamma Correction`. This is not an official repository. In the algorithm we use the HSV color space 
+This is the implementation in python of the algorithm of the paper `Automatic Contrast-Limited Adaptive Histogram
+Equalization With Dual Gamma Correction` [link here](https://ieeexplore.ieee.org/document/8269243). This is not an official repository. In the algorithm we use the HSV color space 
 and specifically the V channel to equalize our images. The algorithm works with grayscale images as well. The proper selection of 
 parameters is important in order to get a good result in RGB and Gray images. Before we process the image, we pad the image with the 
 reflection. Reflection, reflects the columns and rows at the sides of the image. The rationale behind this approach, is that the blocks 
@@ -55,3 +55,11 @@ optional arguments:
 `python main.py ./images/streets.jpg --kernel 32,32 --alpha 40 --delta 50 --p 1.5 --show`
 
 `python main.py ./images/building.jpg --kernel 32,32 --alpha 40 --delta 50 --p 1.5 --show`
+
+## Results
+
+> RGB Example
+<img src="./plots/eq_streets.png" width="720"/>
+
+> Grayscale Example
+<img src="./plots/eq_streets_gray.png" width="720"/>
